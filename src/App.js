@@ -65,7 +65,7 @@ function App(props) {
 //       scopes: ["Sites.FullControl.All", "Calendars.ReadWrite"],
 //     });
 //   }
-  Providers.globalProvider = new ProxyProvider("https://walrus-app-v3k99.ondigitalocean.app/proxy/63e4ce5542771d5254e2525c");
+  Providers.globalProvider = new ProxyProvider("proxy_url");
   // setup initial data
   const siteDetails = useSiteEditUrl(props.list_setting_url, props.site_name);
   const [eventsData, setEventsData] = useState([]);

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Providers } from "@microsoft/mgt-element";
+import { MockProvider, Providers } from "@microsoft/mgt-element";
 import { Login, Get } from "@microsoft/mgt-react";
 import "./App.css";
 import FullCalendar from "@fullcalendar/react";
@@ -12,6 +12,7 @@ import {
   AdaptiveCard,
   Calender,
 } from "wp-webcomponent";
+import { usePopper } from "react-popper";
 
 const formatDate = (date) => {
   const tempDate = new Date(date);
@@ -34,9 +35,6 @@ const buildQuery = (props, siteDetails) => {
   if (props.columns) {
     url += `?expand=fields(select=${props.columns})`;
     hasQuery = true;
-  } else {
-    url += `?expand=fields(select=EndDate,EventDate,Title)`;
-    hasQuery = true;
   }
   if (props.category) {
     url += hasQuery ? "&" : "?";
@@ -52,29 +50,38 @@ const buildQuery = (props, siteDetails) => {
   }
   return url;
 };
+
 function App(props) {
   // setup proxy
   const serverProxyDomain = checkProxy();
-//   if (serverProxyDomain) {
-//     console.log("using proxy: ", serverProxyDomain);
-//     Providers.globalProvider = new ProxyProvider(serverProxyDomain);
-//   } else {
-//     console.log("using msal");
-//     Providers.globalProvider = new MsalProvider({
-//       clientId: props.clientId,
-//       scopes: ["Sites.FullControl.All", "Calendars.ReadWrite"],
-//     });
-//   }
-  Providers.globalProvider = new ProxyProvider("proxy_url");
+
+  useEffect(() => {
+    if (serverProxyDomain) {
+      console.log("using proxy: ", serverProxyDomain);
+      Providers.globalProvider = new ProxyProvider(serverProxyDomain);
+    } else {
+      console.log("using msal", props);
+      Providers.globalProvider = new MsalProvider({
+        clientId: props.clientid,
+        scopes: ["Sites.FullControl.All", "Calendars.ReadWrite"],
+      });
+    }
+  }, [serverProxyDomain]);
+
   // setup initial data
   const siteDetails = useSiteEditUrl(props.list_setting_url, props.site_name);
   const [eventsData, setEventsData] = useState([]);
   const [dataLoaded, setDataLoaded] = useState(false);
+
   const Events = (eventProps) => {
+    console.log({ props1: eventProps });
     const tempData = [];
 
     useEffect(() => {
       eventProps.dataContext.value.forEach((event) => {
+        // console.log({
+        //   event: event,
+        // });
         // tempData.push({ title: event.subject, start: formatDate(event.start.dateTime), end: formatDate(event.end.dateTime), url:event.webLink })
         tempData.push({
           title: event.fields.Title,
@@ -99,36 +106,118 @@ function App(props) {
     return <></>;
   };
 
-  console.log({
-    eventsData,
-    props
-  });
+  console.log("ed", eventsData);
+  // console.log({
+  //   props, siteDetails, eventsData
+  // })
 
   const AdaptiveCardLayout = Calender;
+  const resourceQuery = buildQuery(props, siteDetails);
+  console.log("rq", resourceQuery);
+
+  // just for testing
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+  const testEventData = [
+    {
+      end: new Date(),
+      start: new Date(),
+      title: "Birthday Party",
+      meta: { id: "lulzsec" },
+    },
+    {
+      end: new Date(),
+      start: new Date(),
+      title: "Friend's birthday party",
+      meta: { id: 2 },
+    },
+    {
+      end: new Date(+new Date() + 2 * ONE_DAY),
+      start: new Date(+new Date() + ONE_DAY),
+      title: "snowy days",
+      meta: { id: 3 },
+    },
+  ];
+  const [hoveredEvent, setHoveredEvent] = useState(null);
+  const [popperElement, setPopperElement] = useState(null);
+  const [virtualRef, setVirtualRef] = useState(null);
+  const { styles, attributes } = usePopper(virtualRef, popperElement, {
+    placement: "right",
+  });
+
+  useEffect(() => {
+    if (!hoveredEvent) return;
+
+    setVirtualRef({
+      getBoundingClientRect() {
+        const rect = JSON.parse(hoveredEvent.el.dataset.coords);
+        return {
+          top: rect.top,
+          left: rect.left,
+          bottom: rect.bottom,
+          right: rect.right,
+          width: rect.width,
+          height: rect.height,
+        };
+      },
+    });
+  }, [hoveredEvent]);
 
   return (
     <>
       {siteDetails.error && <p>{siteDetails.error}</p>}
-      <h1>{props.title ?? "List Calender"}</h1>
+      <h1>{props.title ?? "Sharepoint Calendar"}</h1>
       <Login />
       {!dataLoaded && <p>Loading data..</p>}
       {!siteDetails.loading && (
         <Get
           // resource={'/me/calendar/events'}
-          resource={buildQuery(props, siteDetails)}
+          resource={resourceQuery}
+          // resource={"/me/mailFolders('SentItems')/messages?$select=sender,subject"}
           version="v1.0"
+          cacheEnabled
         >
           <Events />
         </Get>
       )}
-      {props.layout === "month" && dataLoaded && (
-        <FullCalendar
-          plugins={[dayGridPlugin]}
-          initialView="dayGridMonth"
-          weekends={!!props.weekends}
-          events={eventsData}
-          // eventContent={renderEventContent}
-        />
+      {props.layout === "calendar" && dataLoaded && (
+        <div style={{ padding: "2rem" }}>
+          <FullCalendar
+            plugins={[dayGridPlugin]}
+            initialView="dayGridMonth"
+            // weekends={!!props.weekends}
+            events={testEventData}
+            eventDidMount={function (info) {
+              info.el.dataset.coords = JSON.stringify(
+                info.el.getBoundingClientRect()
+              );
+            }}
+            eventMouseEnter={function (e) {
+              if (hoveredEvent?.event.id !== e.event.id) {
+                setHoveredEvent({ el: e.el, event: e.event });
+              }
+            }}
+            eventMouseLeave={function (e) {
+              setHoveredEvent(null);
+            }}
+            // eventContent={renderEventContent}
+          />
+
+          {hoveredEvent && (
+            <div
+              ref={setPopperElement}
+              style={{
+                ...styles.popper,
+                padding: "20px",
+                backgroundColor: "white",
+                zIndex: 1,
+                boxShadow: "0 0 50px 0 rgb(82 63 105 / 15%)",
+              }}
+              {...attributes.popper}
+            >
+              {hoveredEvent.event.title}
+            </div>
+          )}
+        </div>
       )}
       {props.layout === "list" && dataLoaded && (
         <div>
@@ -140,72 +229,15 @@ function App(props) {
           />
         </div>
       )}
+      {props.layout === "adaptive card" && dataLoaded && (
+        <div>Not Implemented</div>
+      )}
+      {!["calendar", "list", "adaptive card"].includes(props.layout) && (
+        <div>Unknown layout specified.</div>
+      )}
     </>
   );
 }
-
-export const Definition1 = {
-  clientId: {
-    title: "Client Id For sign in",
-    type: "string",
-  },
-  list_setting_url: {
-    title: "List Setting URL",
-    type: "string",
-  },
-  site_id: {
-    title: "Site Id",
-    type: "string",
-  },
-  site_name: {
-    title: "Site name",
-    type: "string",
-  },
-  list_id: {
-    title: "List Id",
-    type: "string",
-  },
-  title: {
-    title: "Title",
-    type: "string",
-  },
-  template: {
-    title: "Template",
-    type: "string",
-  },
-  layout: {
-    title: "layout",
-    type: "string",
-    enum: ["calender", "adaptive card"],
-  },
-  columns: {
-    title: "Columns",
-    type: "string",
-    default:
-      "EndDate,EventDate,Category,ID,Location,Title,fAllDayEvent,RecurrenceID,fRecurrence,RecurrenceData,MasterSeriesItemID,Description,Author/Title,Attachments",
-  },
-  initial_month: {
-    title: "Initial month in number(0-11)",
-    type: "number",
-  },
-  weekends: {
-    type: "boolean",
-  },
-  category: {
-    title: "Category",
-    type: "string",
-  },
-  to_date: {
-    title: "End Date",
-    type: "string",
-    format: "date",
-  },
-  from_date: {
-    title: "Start Date",
-    type: "string",
-    format: "date",
-  },
-};
 
 export const Definition = [
   {
@@ -219,9 +251,8 @@ export const Definition = [
     zone: "appearances",
     component: "TextBox",
     name: "title",
-    createSeparateSection: true,
-    title: "Some textbox",
     displayName: "Title",
+    title: "Title",
   },
   {
     zone: "appearances",
@@ -233,63 +264,11 @@ export const Definition = [
   },
   {
     zone: "appearances",
-    component: "HeadingColorAndSize",
-    name: ["headingColor", "headingSize"],
-  },
-  {
-    component: "TextBox",
-    name: "clientId",
-    displayName: "Client Id",
-  },
-  {
-    component: "TextBox",
-    name: "list_setting_url",
-    displayName: "List setting URL",
-  },
-  {
-    component: "TextBox",
-    name: "site_id",
-    displayName: "Site Id",
-  },
-  {
-    component: "TextBox",
-    name: "site_name",
-    displayName: "Site Name",
-  },
-  {
-    component: "TextBox",
-    name: "list_id",
-    displayName: "List Name",
-  },
-  {
-    component: "TextBox",
-    name: "template",
-    displayName: "Template",
-  },
-  {
-    component: "TextBox",
-    name: "columns",
-    displayName: "Columns",
-  },
-  {
-    component: "TextBox",
-    name: "category",
-    displayName: "Category",
-  },
-  {
-    component: "TextBox",
-    name: "from_date",
-    displayName: "Start Date",
-  },
-  {
-    component: "TextBox",
-    name: "to_date",
-    displayName: "End Date",
-  },
-  {
-    component: "TextBox",
-    name: "initial_month",
-    displayName: "Initial Month",
+    component: "BackgroundType",
+    name: ["typeSelected", "changeBgColor", "changeBgOverlay", "selectedImage"],
+    displayName: "Background Type",
+    createSeparateSection: true,
+    title: "Background Type",
   },
   {
     zone: "layout",
@@ -298,10 +277,115 @@ export const Definition = [
     enum: ["list", "month", "grid"],
   },
   {
-    zone: "layout",
+    component: "TextBox",
+    name: "siteid",
+    displayName: "Site Id",
+    title: "Site Id",
+  },
+  {
+    component: "TextBox",
+    name: "listid",
+    displayName: "List Id",
+    title: "List Id",
+  },
+  {
+    component: "TextBox",
+    name: "from_date",
+    displayName: "Start Date",
+    title: "Start Date",
+  },
+  {
     component: "TextBox",
     name: "to_date",
     displayName: "End Date",
+    title: "End Date",
+  },
+  {
+    component: "TextBox",
+    name: "category",
+    displayName: "Category",
+    title: "Category",
+  },
+  {
+    component: "TextBox",
+    name: "initial_month",
+    displayName: "Month",
+    title: "Month",
+  },
+  {
+    component: "TextBox",
+    name: "columns",
+    displayName: "Columns",
+    title: "Columns",
+  },
+  {
+    component: "TextBox",
+    name: "sort",
+    displayName: "Sort By",
+    title: "Sort By",
+  },
+  {
+    component: "TextBox",
+    name: "timediff",
+    displayName: "Time Difference",
+    title: "Time Difference",
+  },
+  {
+    component: "TextBox",
+    name: "timezone",
+    displayName: " Time Zone",
+    title: "Time Zone",
+  },
+  {
+    component: "TextBox",
+    name: "mthviewdaylimit",
+    displayName: "Month View Day Limit",
+    title: "Month View Day Limit",
+  },
+  {
+    zone: "setting",
+    component: "ElementsToDisplay",
+    name: "elementsToDisplay",
+    displayName: "Elements To Display",
+    createSeparateSection: true,
+    title: "Elements To Display",
+    enum: [
+      "EventType",
+      "Button",
+      "ImageOrVideo",
+      "Tags",
+      "Description",
+      "Venue",
+      "Map",
+      "Host",
+      "Share",
+      "Countdown",
+      "ShowPrintButton",
+    ],
+  },
+  {
+    zone: "setting",
+    component: "Switch",
+    name: "switch",
+    displayName: "Switch",
+    createSeparateSection: true,
+    title: "Switch",
+  },
+  {
+    zone: "setting",
+    component: "Date",
+    name: ["startDate", "endDate"],
+    displayName: "Date",
+    createSeparateSection: true,
+    title: "Date",
+  },
+  {
+    zone: "setting",
+    component: "Rating",
+    name: "review",
+    displayName: "Rating",
+    createSeparateSection: true,
+    title: "Rating",
   },
 ];
 

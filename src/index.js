@@ -11,4 +11,4 @@ const ThemeProvider = ({children}) => {
 
 const context = generateClass(ThemeProvider, App, Definition, ProxyPayload)
 
-customElements.define('wp-calender-list', context.instance);
+customElements.define('wp-list-calendar', context.instance);

@@ -52,7 +52,7 @@ const buildQuery = (props, siteDetails) => {
 };
 
 function App(props) {
-  // setup proxy privider
+  // setup proxy
   const serverProxyDomain = checkProxy();
 
   useEffect(() => {
